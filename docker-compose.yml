@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: socialnetwork-frontend
+    ports:
+      - "5173:5173"
+    env_file:
+      - ./frontend/.env.docker
+    depends_on:
+      - backend
+    restart: always
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: socialnetwork-backend
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./backend/.env.docker
+    depends_on:
+      - migrate
+      - redis
+    networks:
+      - backend
+    restart: always
+
+
+  db:
+    build:
+      context: .
+      dockerfile: database/Dockerfile
+    container_name: socialnetwork-db
+    env_file:
+      - ./database/.env.docker
+    networks:
+      - backend 
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:6.2-alpine
+    restart: unless-stopped
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: redis-server --save 60 1 --loglevel warning
+
+  redis-commander:
+    container_name: redis-commander
+    hostname: redis-commander
+    image: rediscommander/redis-commander:latest
+    environment:
+    - REDIS_HOST=redis
+    ports:
+      - "127.0.0.1:8081:8081"
+    depends_on:
+      - redis
+    restart:
+      unless-stopped
+  
+    
+  migrate:
+    image: migrate/migrate
+    container_name: migrate
+    depends_on:
+      - db
+    entrypoint: ["/bin/sh", "/wait-for-db.sh"]
+    environment:
+      DB_URL: postgres://admin:adminpassword@db:5432/socialnetwork?sslmode=disable
+    volumes:
+      - ./backend/cmd/migrate/migrations:/migrations
+      - ./database/wait-for-db.sh:/wait-for-db.sh
+    networks:
+      - backend
+
+  
+volumes:
+  db-data:
+
+networks:
+  backend:
+    driver: bridge
