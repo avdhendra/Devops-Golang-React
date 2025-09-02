@@ -8,7 +8,7 @@ terraform {
   backend "s3" {
     bucket         = "my-tf-test-bucket"
     key            = "terraform.tfstate"
-    region         = "eu-central-1"
+    region         = "us-east-1"
     use_lockfile= true
 
   }
