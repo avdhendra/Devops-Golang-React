@@ -5,12 +5,14 @@ terraform {
       version = "5.91.0"
     }
   }
+  backend "s3" {
+    bucket         = "my-tf-test-bucket"
+    key            = "terraform.tfstate"
+    region         = "eu-central-1"
+    use_lockfile= true
+
+  }
+
+
 }
 
-backend "s3" {
-  bucket         = var.backend_bucket
-  key            = var.backend_key
-  region         = var.backend_region
-  dynamodb_table = var.backend_dynamodb_table
-
-}

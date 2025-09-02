@@ -1,6 +1,6 @@
 resource "aws_key_pair" "deployer" {
   key_name   = var.my_key_pair
-  public_key = var.my_pub_key
+  public_key = file(var.my_pub_key)
 }
 
 resource "aws_default_vpc" "default" {}
