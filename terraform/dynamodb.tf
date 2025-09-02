@@ -1,4 +1,5 @@
 resource "aws_dynamodb_table" "terraform_locks" {
+  provider     = aws.backend
   name         = var.backend_dynamodb_table
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "LockID"
@@ -10,6 +11,6 @@ resource "aws_dynamodb_table" "terraform_locks" {
 
   tags = {
     Name       = "Terraform State Lock"
-    Enviroment = "Dev"
+    Environment = "Dev"
   }
 }
