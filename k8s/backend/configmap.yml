@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: social
+data:
+  ADDR: ":8080"
+  DB_MAX_IDLE_TIME: "15m"
+  EXTERNAL_URL: "localhost:8080"

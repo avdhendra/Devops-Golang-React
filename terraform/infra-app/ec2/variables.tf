@@ -23,6 +23,11 @@ variable "my_pub_key" {
   type        = string
 }
 
+variable "my_private_key" {
+  description = "my private key"
+  type        = string
+}
+
 variable "my_env" {
   description = "Environment (dev, staging, prod)"
   type        = string

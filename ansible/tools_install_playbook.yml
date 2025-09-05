@@ -1,0 +1,14 @@
+- hosts: dev_server
+  become: yes
+  tasks:
+    - name: Install Docker
+      include_tasks: docker_playbook.yml
+
+    - name: Install Jenkins
+      include_tasks: jenkins_playbook.yml
+
+    - name: Install Trivy
+      include_tasks: trivy_playbook.yml
+
+    - name: Install SonarQube
+      include_tasks: sonarqube_playbook.yml

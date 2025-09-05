@@ -76,4 +76,14 @@ resource "aws_instance" "my_app_server" {
   tags = {
     Name = var.name
   }
+   
 }
+
+resource "local_file" "ansible_inventory" {
+  content  = <<EOT
+[dev_server]
+${aws_instance.my_app_server.public_ip} ansible_user=ubuntu ansible_ssh_private_key_file=../terraform/devops-key
+EOT
+  filename =  "${path.module}/../../../ansible/inventory.ini"
+}
+

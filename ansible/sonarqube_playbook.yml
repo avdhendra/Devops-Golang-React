@@ -1,0 +1,23 @@
+
+    - name: Ensure Docker is installed
+      apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker service is running
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Run SonarQube container
+      docker_container:
+        name: SonarQube-Server
+        image: sonarqube:lts-community
+        state: started
+        restart_policy: always
+        published_ports:
+          - "9000:9000"
+        tty: yes
+        detach: yes

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: social
+data:
+  config.js: |
+    window.__APP_CONFIG__ = {
+      VITE_API_URL: "https://backend.example.com/v1"
+    };

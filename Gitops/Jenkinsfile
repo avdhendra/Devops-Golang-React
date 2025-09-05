@@ -1,0 +1,158 @@
+@Library('Shared') _
+pipeline {
+  agent any
+
+  options {
+    ansiColor('xterm')
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '30'))
+    timeout(time: 45, unit: 'MINUTES')
+  }
+
+  parameters {
+    string(name: 'BACKEND_IMAGE',  defaultValue: '', description: 'Full image ref from CI, e.g. 7997....dkr.ecr.eu-central-1.amazonaws.com/social-backend:42-a1b2c3d')
+    string(name: 'FRONTEND_IMAGE', defaultValue: '', description: 'Full image ref from CI, e.g. 7997....dkr.ecr.eu-central-1.amazonaws.com/social-frontend:42-a1b2c3d')
+  }
+
+  environment {
+    // ---- Argo CD ----
+    ARGO_APP    = 'socialnetwork'         // TODO: your ArgoCD Application name
+    ARGO_SERVER = 'argocd.example.com'    // TODO: host only (no http/https)
+
+    // ---- Git repo ----
+    GIT_URL    = 'https://github.com/avdhendra/Devops-Golang-React.git'
+    GIT_BRANCH = 'main'
+
+    EMAIL_TO   = 'avdhendrasingh3@gmail.com'
+  }
+
+  stages {
+    stage('Validate params') {
+      steps {
+        script {
+          if (!params.BACKEND_IMAGE?.trim() || !params.FRONTEND_IMAGE?.trim()) {
+            error "BACKEND_IMAGE and FRONTEND_IMAGE must be provided (from CI)."
+          }
+          echo "Will deploy:\n  BACKEND_IMAGE = ${params.BACKEND_IMAGE}\n  FRONTEND_IMAGE = ${params.FRONTEND_IMAGE}"
+        }
+      }
+    }
+
+    stage('Workspace cleanup') {
+      steps { cleanWs() }
+    }
+
+    stage('Checkout repo') {
+      steps {
+        script {
+          // Your Shared Library helper
+          code_checkout(env.GIT_URL, env.GIT_BRANCH)
+        }
+      }
+    }
+
+    stage('ArgoCD deploy (runtime override)') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'argocd-creds', usernameVariable: 'ARGO_USER', passwordVariable: 'ARGO_PASS')]) {
+          sh """
+            set -eux
+            # Login
+            argocd login ${ARGO_SERVER} --username "${ARGO_USER}" --password "${ARGO_PASS}" --grpc-web --insecure
+
+            # Kustomize image overrides (no Git commit yet)
+            argocd app set ${ARGO_APP} \
+              --kustomize-image ${params.BACKEND_IMAGE} \
+              --kustomize-image ${params.FRONTEND_IMAGE}
+
+            # Sync & wait for Healthy
+            argocd app sync ${ARGO_APP} --grpc-web --timeout 600
+            argocd app wait ${ARGO_APP} --grpc-web --timeout 600 --health
+          """
+        }
+      }
+    }
+
+    stage('Update manifests with new images') {
+      steps {
+        script {
+          // If you keep a top-level kustomization.yaml with images:, prefer yq.
+          // Here we stick to your simple sed-based replacements in two YAMLs.
+          dir('k8s/backend') {
+            sh """
+              set -eux
+              # backend.yaml: replace the image line containing 'social-backend'
+              sed -i -E 's|(image:\\s*).*social-backend:.*|\\1${params.BACKEND_IMAGE}|' deployment.yaml
+
+              
+            
+            """
+          }
+          dir('k8s/frontend') {
+            sh """
+              set -eux
+            
+
+              # frontend.yaml: replace the image line containing 'social-frontend'
+              sed -i -E 's|(image:\\s*).*social-frontend:.*|\\1${params.FRONTEND_IMAGE}|' deployment.yaml
+
+             
+            """
+          }
+        }
+      }
+    }
+
+    stage('Git commit & push (only after successful deploy)') {
+      steps {
+        withCredentials([gitUsernamePassword(credentialsId: 'Github-cred', gitToolName: 'Default')]) {
+          sh """
+            set -eux
+            git status
+            git add .
+            git commit -m "CD: Deploy BE=${params.BACKEND_IMAGE} FE=${params.FRONTEND_IMAGE}" || echo "No changes to commit"
+            git push ${GIT_URL} ${GIT_BRANCH}
+          """
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      emailext(
+        to: env.EMAIL_TO,
+        subject: "[CD ✅] ${env.JOB_NAME} #${env.BUILD_NUMBER} deployed",
+        mimeType: 'text/html',
+        body: """
+          <html><body>
+            <h3>CD Succeeded</h3>
+            <p><b>Job:</b> ${env.JOB_NAME}</p>
+            <p><b>Build #:</b> ${env.BUILD_NUMBER}</p>
+            <p>Images:</p>
+            <ul>
+              <li>${params.BACKEND_IMAGE}</li>
+              <li>${params.FRONTEND_IMAGE}</li>
+            </ul>
+            <p>Argo App <b>${env.ARGO_APP}</b> is Healthy and manifests were pushed to <code>${env.GIT_BRANCH}</code>.</p>
+          </body></html>
+        """
+      )
+    }
+    failure {
+      emailext(
+        to: env.EMAIL_TO,
+        subject: "[CD ❌] ${env.JOB_NAME} #${env.BUILD_NUMBER} failed",
+        mimeType: 'text/html',
+        body: """
+          <html><body>
+            <h3>CD Failed</h3>
+            <p><b>Job:</b> ${env.JOB_NAME}</p>
+            <p><b>Build #:</b> ${env.BUILD_NUMBER}</p>
+            <p>Deployment did not complete. No manifest changes were pushed.</p>
+          </body></html>
+        """
+      )
+    }
+  }
+}

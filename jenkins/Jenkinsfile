@@ -1,0 +1,152 @@
+@Library('Shared') _
+
+
+def AWS_REGION     = 'eu-central-1'
+def AWS_ACCOUNT_ID = '799722627159'
+def ECR_REPO_FE    = 'social-frontend'
+def ECR_REPO_BE    = 'social-backend'
+def ECR_REGISTRY   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+def GIT_SHA   = ''
+def SHORT_SHA = ''
+def IMAGE_TAG = ''           
+def EMAIL_RECIPIENTS = 'avdhendrasingh3@gmail.com'
+
+pipeline {
+  agent any
+  options {
+    ansiColor('xterm')
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '30'))
+    timeout(time: 45, unit: 'MINUTES')
+  }
+
+     environment{
+        SONAR_HOME = tool "Sonar"
+         AWS_REGION     = 'eu-central-1'               
+    AWS_ACCOUNT_ID = '799722627159'                
+    ECR_REGISTRY   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+    ECR_REPO_FE    = 'social-frontend'             
+    ECR_REPO_BE    = 'social-backend'
+
+   
+    GIT_SHA   = ''
+    SHORT_SHA = ''
+    IMAGE_TAG = ''                                  // e.g. "42-a1b2c3d"
+
+    // Optional: email recipients
+    EMAIL_RECIPIENTS = 'avdhendrasingh3@gmail.com'
+    }
+
+  stages {
+    stage('Workspace cleanup') {
+      steps { cleanWs() }
+    }
+
+    stage('Git: Code Checkout') {
+      steps {
+        script {
+          // use your repo + branch
+          code_checkout("https://github.com/avdhendra/Devops-Golang-React.git", "main")
+
+          GIT_SHA   = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+          SHORT_SHA = GIT_SHA.take(7)
+          IMAGE_TAG = "${env.BUILD_NUMBER}-${SHORT_SHA}"
+          echo "Computed tag: ${IMAGE_TAG}"
+        }
+      }
+    }
+
+    stage('Trivy: Filesystem scan') {
+      steps { script { trivy_scan() } }
+    }
+
+    stage('OWASP: Dependency check') {
+      steps { script { owasp_dependency() } }
+    }
+
+    stage('SonarQube: Code Analysis') {
+      steps { script { sonarqube_analysis("Sonar", "wanderlust", "wanderlust") } }
+    }
+
+    stage('SonarQube: Code Quality Gates') {
+      steps { script { sonarqube_code_quality() } }
+    }
+
+   
+
+    stage('ECR: Build & Push (IAM role)') {
+      steps {
+        script {
+          ecrBuildPush(
+            region:      AWS_REGION,
+            accountId:   AWS_ACCOUNT_ID,
+            registry:    ECR_REGISTRY,
+            repoFE:      ECR_REPO_FE,
+            repoBE:      ECR_REPO_BE,
+            imageTag:    IMAGE_TAG,
+            fePath:      'frontend',
+            feDockerfile:'frontend/Dockerfile',
+            bePath:      'backend',
+            beDockerfile:'backend/Dockerfile'
+          )
+        }
+      }
+    }
+
+    stage('Publish Build Info') {
+      steps {
+        writeFile file: 'build-info.json', text: """{
+  "backend_image":  "${ECR_REGISTRY}/${ECR_REPO_BE}:${IMAGE_TAG}",
+  "frontend_image": "${ECR_REGISTRY}/${ECR_REPO_FE}:${IMAGE_TAG}",
+  "git_sha":        "${GIT_SHA}",
+  "build_number":   "${env.BUILD_NUMBER}"
+}"""
+        archiveArtifacts artifacts: 'build-info.json', fingerprint: true
+      }
+    }
+  }
+
+  post {
+    success {
+      emailext(
+        subject: "[CI ✅] ${env.JOB_NAME} #${env.BUILD_NUMBER} OK",
+        to: EMAIL_RECIPIENTS,
+        mimeType: 'text/html',
+        body: """
+          <h3>CI Succeeded</h3>
+          <p><b>Job:</b> ${env.JOB_NAME}</p>
+          <p><b>Build #:</b> ${env.BUILD_NUMBER}</p>
+          <p><b>Commit:</b> ${GIT_SHA}</p>
+          <p>Images pushed:</p>
+          <ul>
+            <li>${ECR_REGISTRY}/${ECR_REPO_BE}:${IMAGE_TAG}</li>
+            <li>${ECR_REGISTRY}/${ECR_REPO_FE}:${IMAGE_TAG}</li>
+          </ul>
+        """
+      )
+
+      build job: "devops-CD", parameters: [
+        string(name: 'BACKEND_IMAGE',  value: "${ECR_REGISTRY}/${ECR_REPO_BE}:${IMAGE_TAG}"),
+        string(name: 'FRONTEND_IMAGE', value: "${ECR_REGISTRY}/${ECR_REPO_FE}:${IMAGE_TAG}")
+      ]
+    }
+
+    failure {
+      emailext(
+        subject: "[CI ❌] ${env.JOB_NAME} #${env.BUILD_NUMBER} FAILED",
+        to: EMAIL_RECIPIENTS,
+        mimeType: 'text/html',
+        body: """
+          <h3>CI Failed</h3>
+          <p><b>Job:</b> ${env.JOB_NAME}</p>
+          <p><b>Build #:</b> ${env.BUILD_NUMBER}</p>
+          <p>Check Jenkins console logs for details.</p>
+        """
+      )
+    }
+  }
+}
+
+

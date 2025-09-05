@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-init-sql
+  namespace: social
+data:
+  db_init.sql: |
+    -- example: create extensions / seed data
+    -- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    -- CREATE TABLE ...

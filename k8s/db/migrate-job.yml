@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  namespace: social
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: wait-db
+          image: alpine:3.19
+          command: ["sh","-c","until nc -z db.social.svc.cluster.local 5432; do echo waiting for db; sleep 2; done"]
+      containers:
+        - name: migrate
+          image: migrate/migrate:4.15.2
+          env:
+            - name: DB_URL
+              valueFrom:
+                secretKeyRef: { name: backend-secrets, key: DB_URL }
+          command: ["/migrate"]
+          args:
+            - "-path=/migrations"
+            - "-database=$(DB_URL)"
+            - "up"
+     
